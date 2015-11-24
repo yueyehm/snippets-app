@@ -9,10 +9,14 @@ logging.debug("Connecting to PostgreSQL")
 connection = psycopg2.connect(database="snippets")
 logging.debug("Database connection established.")
 
-def put(name, snippet):
+def put(name, snippet, hide=0):
     """Store a snippet with an associated name."""
     logging.info("Storing snippet {!r}: {!r}".format(name, snippet))
     cursor = connection.cursor()
+    if hide:
+        hide = True
+    else:
+        hide = False
     # try:
     #     command = "insert into snippets values (%s, %s)"
     #     cursor.execute(command, (name, snippet))
@@ -23,10 +27,10 @@ def put(name, snippet):
     # connection.commit()
     try:
         with connection, connection.cursor() as cursor:
-            cursor.execute("insert into snippets values (%s, %s)", (name, snippet))
+            cursor.execute("insert into snippets values (%s, %s, %s)", (name, snippet, hide))
     except psycopg2.IntegrityError as e:
         with connection, connection.cursor() as cursor:
-            cursor.execute("update snippets set message=%s where keyword=%s", (name, snippet)) 
+            cursor.execute("update snippets set message=%s, hidden=%s where keyword=%s", (snippet, hide, name)) 
     
     logging.debug("Snippet stored successfully.")
     return name, snippet
@@ -55,6 +59,27 @@ def get(name):
 
     return ""    
     
+def catalog():
+    logging.info("Get all the keyword")
+    with connection, connection.cursor() as cursor:
+        cursor.execute("select keyword from snippets where hidden=false order by keyword")
+        keywords = cursor.fetchall()
+        if keywords:
+            return keywords
+        else:
+            return "No keyword in database"
+            
+def search(snippet):
+    logging.info("Search snippets with snippet")
+    with connection, connection.cursor() as cursor:
+        cursor.execute("select message from snippets where message LIKE %s and hidden=false", ('%' + snippet + '%',))
+        message = cursor.fetchall()
+    if message:
+        return message
+    else:
+        return "No search result"
+    
+    
 def main():
     """Main function"""
     logging.info("Constructing parser")
@@ -67,12 +92,22 @@ def main():
     put_parser = subparsers.add_parser("put", help="Store a snippet")
     put_parser.add_argument("name", help="The name of the snippet")
     put_parser.add_argument("snippet", help="The snippet text")
+    put_parser.add_argument("-hi", "--hide", type=int, choices=[0,1], help="Indicate whether hide this snippet")
+    
     
     # Subparse for the get command
     logging.debug("Constructing get subparser") 
     get_parser = subparsers.add_parser("get", help="Retrieve a snippet")
     get_parser.add_argument("name", help="The name of the snippet")
     
+    # Subparse for the catalog command
+    logging.debug("Constructing catalog subparser") 
+    catalog_parser = subparsers.add_parser("catalog", help="List all keywords")
+    
+    # Subparse for the search command
+    logging.debug("Constructing search subparser") 
+    search_parser = subparsers.add_parser("search", help="Search snippets")
+    search_parser.add_argument("snippet", help="The name of the snippet")
 
     arguments = parser.parse_args(sys.argv[1:])
      # Convert parsed arguments from Namespace to dictionary
@@ -85,6 +120,13 @@ def main():
     elif command == "get":
         snippet = get(**arguments)
         print("Retrieved snippet: {!r}".format(snippet))
+    elif command == "catalog":
+        keywords = catalog()
+        print("Retrieved keywords: {!r}".format(keywords))
+    elif command =="search":
+        snippets = search(**arguments);
+        print("Retrived snippets: {!r}".format(snippets))
+    
     
 if __name__ == "__main__":
     main()
